@@ -21,4 +21,4 @@ and open the address it prints. Browsers share a camera only with pages on `loca
 
 ## Credits
 
-The keying shader is a port of [OBS Studio](https://obsproject.com)'s [chroma key filter](https://github.com/obsproject/obs-studio/blob/master/plugins/obs-filters/data/chroma_key_filter.effect).
+The keying shader is a port of [OBS Studio](https://obsproject.com)'s [chroma key filter](https://github.com/obsproject/obs-studio/blob/master/plugins/obs-filters/data/chroma_key_filter_v2.effect), with its settings in OBS's ranges. The tint (**Color**), **Saturation** and **Flip** are this app's own.

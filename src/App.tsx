@@ -6,7 +6,7 @@ import { Screen } from './Screen.tsx'
 import { useCamera } from './useCamera.ts'
 
 // The canvas renders as the prototype's did: at the display's full pixel ratio, where R3F's default caps it at 2, and
-// opaque, since the shader writes its alpha without blending and only the pixels it discards show the black background
+// opaque. The shader's alpha blends the picture over the black background, which shows where the key is
 export default function App() {
   const [uniforms] = useState(createUniforms)
   const [flip, setFlip] = useState(false)
