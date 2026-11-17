@@ -1,22 +1,29 @@
 <!doctype html>
-<html>
+<html lang="en">
+  <head>
+    <!-- Google tag (gtag.js), on the live site only -->
+    <script>
+      if (location.host === 'snovakow.com') {
+        const gtagScript = document.createElement('script')
+        gtagScript.async = true
+        gtagScript.src = 'https://www.googletagmanager.com/gtag/js?id=G-DV1KLMY93N'
+        document.head.prepend(gtagScript)
 
-<head>
-	<title>Greenscreen</title>
-	<script type="importmap">
-		{
-			"imports": {
-				"three": "../../three.js/src/Three.js",
-				"three/addons/": "../../three.js/examples/jsm/"
-			}
-		}
-	</script>
-	<script src="main.js?0.0.3"></script>
+        window.dataLayer = window.dataLayer || []
+        function gtag() { dataLayer.push(arguments) }
+        gtag('js', new Date())
 
-	<meta charset="utf-8">
-	<meta name="viewport" content="width=device-width,initial-scale=1">
-</head>
+        gtag('config', 'G-DV1KLMY93N')
+      }
+    </script>
 
-<body style="background-color: black;"></body>
-
+    <meta charset="UTF-8" />
+    <meta name="description" content="Greenscreen: a live chroma key for your camera, in the browser, based on the one in OBS Studio." />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Greenscreen</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
 </html>

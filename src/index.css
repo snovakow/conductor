@@ -1,0 +1,27 @@
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+body {
+  background-color: black;
+}
+
+/* The camera's own picture, small in the bottom-right corner */
+.preview {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  width: 160px;
+}
+
+/* Asks for the camera again, over the corner of the preview */
+.load {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+}
