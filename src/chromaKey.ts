@@ -2,8 +2,8 @@ import { Color, Vector2 } from 'three'
 import type { Texture } from 'three'
 
 // The keying shader: OBS Studio's chroma key filter (its second version), ported to GLSL, with OBS's names for what is
-// OBS's. A tint and a saturation control are added. Like OBS, it measures each pixel's distance from the key in the
-// video's sRGB values and does everything else in linear light
+// OBS's. A tint, a saturation control and a cutout are added. Like OBS, it measures each pixel's distance from the key
+// in the video's sRGB values and does everything else in linear light
 // https://github.com/obsproject/obs-studio/blob/master/plugins/obs-filters/data/chroma_key_filter_v2.effect
 
 export const vertexShader = /* glsl */ `
@@ -36,6 +36,7 @@ uniform float spill;
 // Not OBS's
 uniform vec3 tint;
 uniform float saturation;
+uniform vec2 crop[4];
 
 varying vec2 vUv;
 
@@ -89,6 +90,31 @@ void changeSaturation(inout vec3 rgb, float change) {
 	rgb = hsb2rgb(hsb);
 }
 
+// How far inside the cutout's side from a to b the point p is, in screen pixels. The points are in the video's
+// coordinates, 0 to 1 with y down, and size scales them to the picture's pixels on screen once they're subtracted, so a
+// short side between two corners close together keeps its direction
+float CropSide(in vec2 a, in vec2 b, in vec2 p, in vec2 size) {
+	vec2 side = (b - a) * size;
+	float len = length(side);
+	// Two corners together leave no side between them, and a triangle
+	if(len == 0.0) return 1.0e6;
+	vec2 q = (p - a) * size;
+	return (q.y * side.x - q.x * side.y) / len;
+}
+
+// The cutout: 1 inside its four corners, 0 outside, and between across the screen pixel a side passes through, so its
+// edges are smooth at any size. The corners always make a convex shape, which a point is inside where it is inside all
+// of its sides. The corners go clockwise round the picture, which puts the inside of each side on its right
+float CropMask(in vec2 uv) {
+	vec2 size = 1.0 / fwidth(uv);
+	vec2 p = vec2(uv.x, 1.0 - uv.y);
+	float d = min(
+		min(CropSide(crop[0], crop[1], p, size), CropSide(crop[1], crop[2], p, size)),
+		min(CropSide(crop[2], crop[3], p, size), CropSide(crop[3], crop[0], p, size))
+	);
+	return clamp(d + 0.5, 0.0, 1.0);
+}
+
 void main(void) {
 	vec3 srgb = SampleTexture(vUv);
 	float chromaDist = GetBoxFilteredChromaDist(srgb, vUv);
@@ -99,7 +125,7 @@ void main(void) {
 	vec3 rgb = sRGBTransferEOTF(vec4(srgb, 1.0)).rgb;
 	rgb *= tint;
 
-	float a = opacity;
+	float a = opacity * CropMask(vUv);
 	a *= fullMask;
 
 	float desat = dot(rgb, vec3(0.2126, 0.7152, 0.0722));
@@ -184,6 +210,9 @@ export function createUniforms() {
     spill: { value: 1 },
     tint: { value: new Color() },
     saturation: { value: 1 },
+    // The cutout's corners, clockwise from the top left, in the video's coordinates with y down, as crop.ts moves them.
+    // At first they're the picture's own
+    crop: { value: [new Vector2(0, 0), new Vector2(1, 0), new Vector2(1, 1), new Vector2(0, 1)] },
   }
   applySettings(uniforms, DEFAULT_SETTINGS)
   return uniforms
@@ -193,7 +222,7 @@ export type ChromaKeyUniforms = ReturnType<typeof createUniforms>
 
 // Settings into the shader's uniforms, as OBS's chroma_key_update_v2 does it
 // https://github.com/obsproject/obs-studio/blob/master/plugins/obs-filters/chroma-key-filter.c
-export function applySettings(uniforms: Omit<ChromaKeyUniforms, 'image' | 'pixel_size'>, settings: Settings) {
+export function applySettings(uniforms: Omit<ChromaKeyUniforms, 'image' | 'pixel_size' | 'crop'>, settings: Settings) {
   const { contrast, gamma } = settings
 
   uniforms.opacity.value = settings.opacity
