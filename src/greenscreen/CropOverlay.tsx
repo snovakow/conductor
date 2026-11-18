@@ -37,9 +37,9 @@ interface Drag {
   chosen: boolean
 }
 
-// The cutout's outline over the camera's preview, and while editable, its handles: a knob at each corner to drag. Once
-// the cutout is smaller than the picture, it drags whole from inside. A drag moves the shader's corners in place, so
-// the picture follows on its next frame
+// The cutout's outline over the source's own picture, and while editable, its handles: a knob at each corner to drag.
+// Once the cutout is smaller than the picture, it drags whole from inside. A drag moves the shader's corners in place,
+// so the picture follows on its next frame
 export function CropOverlay({ corners, editable }: CropOverlayProps) {
   const canvas = useRef<HTMLCanvasElement>(null)
   const hover = useRef(NONE)

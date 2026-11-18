@@ -3,7 +3,7 @@ import type { Texture } from 'three'
 
 // The keying shader: OBS Studio's chroma key filter (its second version), ported to GLSL, with OBS's names for what is
 // OBS's. A tint, a saturation control and a cutout are added. Like OBS, it measures each pixel's distance from the key
-// in the video's sRGB values and does everything else in linear light
+// in the picture's sRGB values and does everything else in linear light
 // https://github.com/obsproject/obs-studio/blob/master/plugins/obs-filters/data/chroma_key_filter_v2.effect
 
 export const vertexShader = /* glsl */ `
@@ -38,6 +38,7 @@ uniform vec3 tint;
 uniform float saturation;
 uniform vec2 crop[4];
 uniform bool cropped;
+uniform bool keyed;
 
 varying vec2 vUv;
 
@@ -51,8 +52,9 @@ float GetChromaDist(in vec3 rgb) {
 	return distance(chroma_key, vec2(cb, cr));
 }
 
-// The video's sRGB values, which is how three.js uploads a video whatever its texture's colour space. OBS samples
-// linear colour and encodes it here, so its samples between texels are blended in linear light, and these in sRGB
+// The picture's sRGB values, which is how three.js uploads a video whatever its texture's colour space, and an image
+// whose texture has none. OBS samples linear colour and encodes it here, so its samples between texels are blended in
+// linear light, and these in sRGB
 vec3 SampleTexture(in vec2 uv) {
 	return texture2D(image, uv).rgb;
 }
@@ -91,7 +93,7 @@ void changeSaturation(inout vec3 rgb, float change) {
 	rgb = hsb2rgb(hsb);
 }
 
-// How far inside the cutout's side from a to b the point p is, in screen pixels. The points are in the video's
+// How far inside the cutout's side from a to b the point p is, in screen pixels. The points are in the picture's
 // coordinates, 0 to 1 with y down, and size scales them to the picture's pixels on screen once they're subtracted, so a
 // short side between two corners close together keeps its direction
 float CropSide(in vec2 a, in vec2 b, in vec2 p, in vec2 size) {
@@ -117,17 +119,25 @@ float CropMask(in vec2 uv) {
 }
 
 void main(void) {
-	vec3 srgb = SampleTexture(vUv);
-	float chromaDist = GetBoxFilteredChromaDist(srgb, vUv);
-	float baseMask = chromaDist - similarity;
-	float fullMask = pow(clamp(baseMask / smoothness, 0.0, 1.0), 1.5);
-	float spillVal = pow(clamp(baseMask / spill, 0.0, 1.0), 1.5);
+	// An image's own transparency is kept, as it comes: not multiplied in, as three.js doesn't premultiply what it uploads
+	vec4 texel = texture2D(image, vUv);
+	vec3 srgb = texel.rgb;
+
+	// With the key off, nothing is keyed out and nothing loses its colour to spill
+	float fullMask = 1.0;
+	float spillVal = 1.0;
+	if(keyed) {
+		float chromaDist = GetBoxFilteredChromaDist(srgb, vUv);
+		float baseMask = chromaDist - similarity;
+		fullMask = pow(clamp(baseMask / smoothness, 0.0, 1.0), 1.5);
+		spillVal = pow(clamp(baseMask / spill, 0.0, 1.0), 1.5);
+	}
 
 	vec3 rgb = sRGBTransferEOTF(vec4(srgb, 1.0)).rgb;
 	rgb *= tint;
 
 	// The cutout only while Crop is on. Every pixel takes the same way here, so the mask's fwidth is still defined
-	float a = opacity * (cropped ? CropMask(vUv) : 1.0);
+	float a = opacity * texel.a * (cropped ? CropMask(vUv) : 1.0);
 	a *= fullMask;
 
 	float desat = dot(rgb, vec3(0.2126, 0.7152, 0.0722));
@@ -138,11 +148,10 @@ void main(void) {
 
 	rgb = CalcColor(rgb);
 
-	// Premultiplied, as OBS returns it, and clamped as the 8-bit target OBS draws to clamps it. Encoding the
-	// premultiplied colour is OBS's linear blend only over opaque black: a see-through canvas would want the colour
-	// encoded first and multiplied by a after
-	gl_FragColor = vec4(clamp(rgb * a, 0.0, 1.0), a);
-	#include <colorspace_fragment>
+	// Clamped as the 8-bit target OBS draws to clamps it, then encoded, then multiplied by a. The picture is drawn over
+	// whatever is under it on the whiteboard, which blends its encoded colours, so it's premultiplied in those. OBS
+	// multiplies before encoding, which blends in linear light but is right only over black
+	gl_FragColor = vec4(sRGBTransferOETF(vec4(clamp(rgb, 0.0, 1.0), 1.0)).rgb * a, a);
 }
 `
 
@@ -151,8 +160,13 @@ export const KEY_COLORS = { green: 0x00ff00, blue: 0x0099ff, magenta: 0xff00ff }
 
 export type KeyType = keyof typeof KEY_COLORS | 'custom'
 
-// What the panel edits: the filter's settings in OBS's units and ranges, and the app's own tint, saturation and cutout
+// What the panel edits: whether the key is on, the filter's settings in OBS's units and ranges, and the app's own
+// mirror, tint, saturation and cutout
 export interface Settings {
+  // Whether the key colour is keyed out. Off, the rest of the settings still apply
+  key: boolean
+  // Whether the picture is mirrored left to right
+  flip: boolean
   // Whether the picture is cut down to the cutout. Its corners are kept while it's off
   crop: boolean
   // The key is keyColor only when keyType is custom
@@ -173,8 +187,10 @@ export interface Settings {
   saturation: number
 }
 
-// OBS's defaults, with no tint and no cutout
+// The picture as it comes: the key off, OBS's defaults for when it's on, and no mirror, tint or cutout
 export const DEFAULT_SETTINGS: Settings = {
+  key: false,
+  flip: false,
   crop: false,
   keyType: 'green',
   keyColor: 0x00ff00,
@@ -201,9 +217,10 @@ export function chromaOf(hex: number): [number, number] {
   ]
 }
 
+// A source's uniforms, which its settings and its cutout's handles set. The picture itself is each material's own: see
+// ScreenUniforms
 export function createUniforms() {
   const uniforms = {
-    image: { value: null as Texture | null },
     pixel_size: { value: new Vector2(1, 1) },
     opacity: { value: 1 },
     contrast: { value: 1 },
@@ -215,11 +232,13 @@ export function createUniforms() {
     spill: { value: 1 },
     tint: { value: new Color() },
     saturation: { value: 1 },
-    // The cutout's corners, clockwise from the top left, in the video's coordinates with y down, as crop.ts moves them.
-    // At first they're the picture's own
+    // The cutout's corners, clockwise from the top left, in the picture's coordinates with y down, as crop.ts moves
+    // them. At first they're the picture's own
     crop: { value: [new Vector2(0, 0), new Vector2(1, 0), new Vector2(1, 1), new Vector2(0, 1)] },
     // Whether the cutout cuts the picture
     cropped: { value: false },
+    // Whether the key colour is keyed out
+    keyed: { value: false },
   }
   applySettings(uniforms, DEFAULT_SETTINGS)
   return uniforms
@@ -227,11 +246,17 @@ export function createUniforms() {
 
 export type ChromaKeyUniforms = ReturnType<typeof createUniforms>
 
-// Settings into the shader's uniforms, as OBS's chroma_key_update_v2 does it
+// What a material is built with: the source's uniforms, shared, and a picture of its own. R3F gives a texture back
+// what it found in the slot it was attached to as it's taken off, so a slot shared between materials could be left
+// empty under one still using it
+export type ScreenUniforms = ChromaKeyUniforms & { image: { value: Texture | null } }
+
+// Settings into the shader's uniforms, as OBS's chroma_key_update_v2 does it. Flip isn't one: it mirrors the plane
 // https://github.com/obsproject/obs-studio/blob/master/plugins/obs-filters/chroma-key-filter.c
-export function applySettings(uniforms: Omit<ChromaKeyUniforms, 'image' | 'pixel_size' | 'crop'>, settings: Settings) {
+export function applySettings(uniforms: Omit<ChromaKeyUniforms, 'pixel_size' | 'crop'>, settings: Settings) {
   const { contrast, gamma } = settings
 
+  uniforms.keyed.value = settings.key
   uniforms.cropped.value = settings.crop
 
   uniforms.opacity.value = settings.opacity

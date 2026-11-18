@@ -8,34 +8,196 @@ body,
 }
 
 body {
+  background-color: #08080c;
+  color: #eee;
+  font-family: system-ui, sans-serif;
+  font-size: 13px;
+}
+
+/* The tabs and the output along the top, the media down the left, and the tab open in the rest */
+.app {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-columns: 256px minmax(0, 1fr);
+  height: 100%;
+}
+
+.app > header {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  background-color: #14141c;
+  border-bottom: 1px solid #2a2a36;
+}
+
+.tabs {
+  display: flex;
+  gap: 4px;
+}
+
+.tabs button[aria-selected='true'] {
+  font-weight: bold;
+}
+
+.output {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.output select {
+  max-width: 240px;
+}
+
+.tab {
+  position: relative;
+  overflow: hidden;
   background-color: black;
 }
 
-/* The camera's own picture, small in the bottom-right corner */
+/* The media: a list chosen by kind, and buttons to add more */
+.assets {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background-color: rgba(0, 0, 16, 0.5);
+}
+
+.assets h2 {
+  margin: 12px 0 8px;
+  font-size: 22px;
+  text-align: center;
+}
+
+.assets select {
+  align-self: center;
+  max-width: 240px;
+}
+
+.assets .add {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin: 8px 0;
+}
+
+.list {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  row-gap: 1px;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+/* A source or a layer: its picture fitted into the row, its name across the bottom */
+.row {
+  position: relative;
+  flex: none;
+  height: 128px;
+  background-color: black;
+  cursor: pointer;
+}
+
+.row canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.row .name {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  overflow: hidden;
+  padding: 4px 8px;
+  background-color: rgba(0, 0, 0, 0.5);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.row .remove {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+}
+
+.row.selected {
+  outline: 2px solid orange;
+  outline-offset: -2px;
+}
+
+.empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  color: #888;
+}
+
+/* The inspector: the prepared picture filling it, the settings at its top right, the source's own picture in its
+   bottom-right corner. Its size is what the preview grows within */
+.inspector {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  container-type: size;
+}
+
+.inspector .picture {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.controls {
+  position: absolute;
+  top: 0;
+  right: 15px;
+  max-height: 100%;
+  overflow-y: auto;
+}
+
+/* The panel's title is the source's name, on one line however long */
+.controls .lil-gui .title {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* The source's own picture, small in the bottom-right corner */
 .preview {
-  position: fixed;
+  position: absolute;
   right: 0;
   bottom: 0;
   width: 160px;
 }
 
-.preview video {
+.preview canvas {
   display: block;
   width: 100%;
 }
 
-/* Larger while a tool is up: up to 480px wide and no wider than the window, but no taller than fits below the panel
-   with room for Load and Done between them, and never smaller than it was */
+/* Larger while a tool is up: up to 480px wide and no wider than the inspector, but no taller than fits below the panel
+   with room for Done between them, and never smaller than it was */
 .preview.enlarged {
-  width: min(480px, 100vw, max(160px, calc((100vh - var(--panel-bottom, 0px) - 28px) * var(--aspect))));
+  width: min(480px, 100cqw, max(160px, calc((100cqh - var(--panel-bottom, 0px) - 28px) * var(--aspect))));
 }
 
 /* While the next click on the preview picks the key */
-.preview.picking video {
+.preview.picking canvas {
   cursor: crosshair;
 }
 
-/* The cutout's outline and handles, over the camera's picture */
+/* The cutout's outline and handles, over the source's picture */
 .overlay {
   position: absolute;
   inset: 0;
@@ -49,23 +211,53 @@ body {
   pointer-events: none;
 }
 
-/* Asks for the camera again, over the corner of the preview */
-.load {
-  position: absolute;
-  right: 0;
-  bottom: 0;
-}
-
-/* Above the preview's left corner while it's enlarged, clear of the handles and of the panel */
-.preview.enlarged .load {
-  right: auto;
-  bottom: 100%;
-  left: 0;
-}
-
 /* Puts the tool down, above the enlarged preview's right corner */
 .done {
   position: absolute;
   right: 0;
   bottom: 100%;
+}
+
+/* The whiteboard, as large as fits up to its own size, with what's on it down the right */
+.whiteboard {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 128px;
+}
+
+/* Lighter around the board, so its black shows where it ends */
+.board {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background-color: #1c1c26;
+  container-type: size;
+}
+
+.board canvas {
+  display: block;
+  width: min(100cqw, 100cqh, 1024px);
+  height: min(100cqw, 100cqh, 1024px);
+  touch-action: none;
+}
+
+.layers {
+  background-color: rgba(0, 0, 16, 0.5);
+}
+
+.layers .row {
+  height: 64px;
+}
+
+/* Where the sources are keyed, out of sight: each canvas keeps its own size, and is only ever copied */
+.processors {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+  pointer-events: none;
 }

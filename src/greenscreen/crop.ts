@@ -1,6 +1,6 @@
 import { MathUtils } from 'three'
 
-// The cutout's corners: four points in the video's coordinates, 0 to 1 across and down the picture, clockwise from the
+// The cutout's corners: four points in the picture's coordinates, 0 to 1 across and down it, clockwise from the
 // top left. The preview's handles move them with these, which keep them inside the picture and keep the shape they make
 // convex, as the shader's test for what is inside it needs
 export interface Point {

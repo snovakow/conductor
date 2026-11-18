@@ -1,4 +1,4 @@
-import { useEffect, useImperativeHandle, useRef, useState } from 'react'
+import { useEffect, useImperativeHandle, useRef } from 'react'
 import type { Ref } from 'react'
 import { GUI } from 'three/addons/libs/lil-gui.module.min.js'
 import type {
@@ -7,8 +7,8 @@ import type {
   FunctionController,
   OptionController,
 } from 'three/addons/libs/lil-gui.module.min.js'
-import { applySettings, DEFAULT_SETTINGS } from './chromaKey.ts'
-import type { ChromaKeyUniforms, KeyType, Settings } from './chromaKey.ts'
+import type { Source } from '../sources/source.ts'
+import type { KeyType, Settings } from './chromaKey.ts'
 import type { Mode } from './Preview.tsx'
 
 // The tools' buttons, and what they say while their tool is up
@@ -17,19 +17,18 @@ const EDITING = 'Drag the corners…'
 const PICK_KEY = 'Pick key'
 const PICKING = 'Click the preview…'
 
-type PanelSettings = Settings & { flip: boolean }
-
 // The controls the panel changes from outside it
 interface PanelControls {
-  crop: BooleanController<PanelSettings, 'crop'>
+  key: BooleanController<Settings, 'key'>
+  crop: BooleanController<Settings, 'crop'>
   editCrop: FunctionController<{ editCrop: () => void }, 'editCrop'>
-  keyType: OptionController<PanelSettings, 'keyType'>
-  keyColor: ColorController<PanelSettings, 'keyColor'>
+  keyType: OptionController<Settings, 'keyType'>
+  keyColor: ColorController<Settings, 'keyColor'>
   pickKey: FunctionController<{ pickKey: () => void }, 'pickKey'>
 }
 
 export interface PanelHandle {
-  // Makes hex the key, as choosing Custom and that colour in the panel would
+  // Makes hex the key and turns the key on, as choosing Custom and that colour in the panel would
   setKey: (hex: number) => void
   // Turns Crop on or off, as its checkbox would
   setCrop: (on: boolean) => void
@@ -37,27 +36,33 @@ export interface PanelHandle {
 
 interface PanelProps {
   ref?: Ref<PanelHandle>
-  uniforms: ChromaKeyUniforms
-  onFlip: (flip: boolean) => void
+  source: Source
   onCrop: (crop: boolean) => void
   // The tool up on the preview, which Edit crop and Pick key put up and down with onEditCrop and onPickKey
   mode: Mode
   onEditCrop: () => void
   onPickKey: () => void
+  // Where the panel ends, down from its container's top, as it opens, closes and shows Key color
+  onBottom: (bottom: number) => void
 }
 
-// The prototype's lil-gui panel, in its order, with Crop and Edit crop after Flip, Pick key after the key's colour, and
-// the filter's controls in the ranges OBS gives them. Every control edits settings, and any change sets the shader's
-// uniforms from them. The settings outlive the panel, so one made again by StrictMode or a hot update starts where the
-// last left off. The cleanup destroys the panel, so StrictMode leaves one
-export function Panel({ ref, uniforms, onFlip, onCrop, mode, onEditCrop, onPickKey }: PanelProps) {
-  const [settings] = useState<PanelSettings>(() => ({ flip: false, ...DEFAULT_SETTINGS }))
+// The source's settings: Key first, then the prototype's lil-gui panel in its order, with Crop and Edit crop after
+// Flip, Pick key after the key's colour, and the filter's controls in the ranges OBS gives them. Every control edits
+// the source's settings, and any change sets its shader's uniforms from them, which prepares the source. Reset puts
+// them all back. The panel is made again for each source, and the settings are the source's, so a source chosen again
+// starts where it left off. The cleanup destroys the panel, so StrictMode leaves one
+export function Panel({ ref, source, onCrop, mode, onEditCrop, onPickKey, onBottom }: PanelProps) {
+  const container = useRef<HTMLDivElement>(null)
   const controls = useRef<PanelControls | null>(null)
 
   useEffect(() => {
-    const gui = new GUI()
+    const element = container.current
+    if (!element) return undefined
+    const settings = source.settings
+    const gui = new GUI({ container: element, title: source.name })
 
-    gui.add(settings, 'flip').name('Flip').onChange(onFlip)
+    const key = gui.add(settings, 'key').name('Key')
+    gui.add(settings, 'flip').name('Flip')
     const crop = gui.add(settings, 'crop').name('Crop').onChange(onCrop)
     const editCrop = gui.add({ editCrop: onEditCrop }, 'editCrop').name(EDIT_CROP)
     gui.addColor(settings, 'tint').name('Color')
@@ -80,24 +85,31 @@ export function Panel({ ref, uniforms, onFlip, onCrop, mode, onEditCrop, onPickK
     gui.add(settings, 'spill', 1, 1000, 1).name('Spill')
     gui.add(settings, 'saturation', 0, 2).name('Saturation')
 
-    gui.onChange(() => applySettings(uniforms, settings))
+    // Back to the picture as it comes. The controls show the settings put back, and Crop off puts the handles down
+    const reset = () => {
+      source.reset()
+      for (const controller of gui.controllersRecursive()) controller.updateDisplay()
+      keyColor.show(settings.keyType === 'custom')
+      onCrop(false)
+    }
+    gui.add({ reset }, 'reset').name('Reset')
 
-    // Where the panel ends, as it opens, closes and shows Key color, for the stylesheet to keep the grown preview
-    // below it
-    const root = document.documentElement
+    gui.onChange(() => source.update())
+
+    // Where the panel ends, for the stylesheet to keep the grown preview below it
     const observer = new ResizeObserver(() => {
-      root.style.setProperty('--panel-bottom', `${gui.domElement.getBoundingClientRect().bottom}px`)
+      const top = element.parentElement?.getBoundingClientRect().top ?? 0
+      onBottom(gui.domElement.getBoundingClientRect().bottom - top)
     })
     observer.observe(gui.domElement)
 
-    controls.current = { crop, editCrop, keyType, keyColor, pickKey }
+    controls.current = { key, crop, editCrop, keyType, keyColor, pickKey }
     return () => {
       controls.current = null
       observer.disconnect()
-      root.style.removeProperty('--panel-bottom')
       gui.destroy()
     }
-  }, [settings, uniforms, onFlip, onCrop, onEditCrop, onPickKey])
+  }, [source, onCrop, onEditCrop, onPickKey, onBottom])
 
   // Each tool's button says what to do next while its tool is up
   useEffect(() => {
@@ -106,13 +118,14 @@ export function Panel({ ref, uniforms, onFlip, onCrop, mode, onEditCrop, onPickK
   }, [mode])
 
   // Setting the controls' values runs their handlers, as a change made in the panel does: Key color shows, with the
-  // colour picked, Crop tells the app, and the uniforms are set from the settings
+  // colour picked, Crop tells the inspector, and the uniforms are set from the settings
   useImperativeHandle(
     ref,
     () => ({
       setKey(hex: number) {
         controls.current?.keyType.setValue('custom')
         controls.current?.keyColor.setValue(hex)
+        controls.current?.key.setValue(true)
       },
       setCrop(on: boolean) {
         controls.current?.crop.setValue(on)
@@ -121,5 +134,5 @@ export function Panel({ ref, uniforms, onFlip, onCrop, mode, onEditCrop, onPickK
     [],
   )
 
-  return null
+  return <div ref={container} className="controls" />
 }
