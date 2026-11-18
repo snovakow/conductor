@@ -37,6 +37,7 @@ uniform float spill;
 uniform vec3 tint;
 uniform float saturation;
 uniform vec2 crop[4];
+uniform bool cropped;
 
 varying vec2 vUv;
 
@@ -125,7 +126,8 @@ void main(void) {
 	vec3 rgb = sRGBTransferEOTF(vec4(srgb, 1.0)).rgb;
 	rgb *= tint;
 
-	float a = opacity * CropMask(vUv);
+	// The cutout only while Crop is on. Every pixel takes the same way here, so the mask's fwidth is still defined
+	float a = opacity * (cropped ? CropMask(vUv) : 1.0);
 	a *= fullMask;
 
 	float desat = dot(rgb, vec3(0.2126, 0.7152, 0.0722));
@@ -149,8 +151,10 @@ export const KEY_COLORS = { green: 0x00ff00, blue: 0x0099ff, magenta: 0xff00ff }
 
 export type KeyType = keyof typeof KEY_COLORS | 'custom'
 
-// What the panel edits: the filter's settings in OBS's units and ranges, and the app's own tint and saturation
+// What the panel edits: the filter's settings in OBS's units and ranges, and the app's own tint, saturation and cutout
 export interface Settings {
+  // Whether the picture is cut down to the cutout. Its corners are kept while it's off
+  crop: boolean
   // The key is keyColor only when keyType is custom
   keyType: KeyType
   keyColor: number
@@ -169,8 +173,9 @@ export interface Settings {
   saturation: number
 }
 
-// OBS's defaults, with no tint
+// OBS's defaults, with no tint and no cutout
 export const DEFAULT_SETTINGS: Settings = {
+  crop: false,
   keyType: 'green',
   keyColor: 0x00ff00,
   similarity: 400,
@@ -213,6 +218,8 @@ export function createUniforms() {
     // The cutout's corners, clockwise from the top left, in the video's coordinates with y down, as crop.ts moves them.
     // At first they're the picture's own
     crop: { value: [new Vector2(0, 0), new Vector2(1, 0), new Vector2(1, 1), new Vector2(0, 1)] },
+    // Whether the cutout cuts the picture
+    cropped: { value: false },
   }
   applySettings(uniforms, DEFAULT_SETTINGS)
   return uniforms
@@ -224,6 +231,8 @@ export type ChromaKeyUniforms = ReturnType<typeof createUniforms>
 // https://github.com/obsproject/obs-studio/blob/master/plugins/obs-filters/chroma-key-filter.c
 export function applySettings(uniforms: Omit<ChromaKeyUniforms, 'image' | 'pixel_size' | 'crop'>, settings: Settings) {
   const { contrast, gamma } = settings
+
+  uniforms.cropped.value = settings.crop
 
   uniforms.opacity.value = settings.opacity
   // A multiplier from 1/5 to 5, and an exponent from 2 to 1/2

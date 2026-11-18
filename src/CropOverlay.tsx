@@ -18,6 +18,9 @@ const SLOP = 4
 interface CropOverlayProps {
   // The shader's own corners, which a drag moves in place
   corners: Point[]
+  // Whether the handles are up to drag. Without them it's just the outline, which the pointer goes through to the
+  // picture under it
+  editable: boolean
 }
 
 // A drag: the pointer making it, what it holds, where it began, and how far the corner it holds was from the pointer,
@@ -34,19 +37,31 @@ interface Drag {
   chosen: boolean
 }
 
-// The cutout's handles over the camera's preview: its outline, and a knob at each corner to drag. Once the cutout is
-// smaller than the picture, it drags whole from inside. A drag moves the shader's corners in place, so the picture
-// follows on its next frame
-export function CropOverlay({ corners }: CropOverlayProps) {
+// The cutout's outline over the camera's preview, and while editable, its handles: a knob at each corner to drag. Once
+// the cutout is smaller than the picture, it drags whole from inside. A drag moves the shader's corners in place, so
+// the picture follows on its next frame
+export function CropOverlay({ corners, editable }: CropOverlayProps) {
   const canvas = useRef<HTMLCanvasElement>(null)
   const hover = useRef(NONE)
   const drag = useRef<Drag | null>(null)
 
   const redraw = useCallback(() => {
-    if (canvas.current) draw(canvas.current, corners, drag.current?.target ?? hover.current)
-  }, [corners])
+    if (canvas.current) draw(canvas.current, corners, editable, drag.current?.target ?? hover.current)
+  }, [corners, editable])
 
-  // As many pixels as the screen has under it, drawn again whenever its size changes
+  // Put down with a drag still going, the handles let go of it. They no longer hear its release, and a drag left held
+  // would keep the next press from taking hold
+  useEffect(() => {
+    if (editable) return
+    const element = canvas.current
+    const held = drag.current
+    if (element && held && element.hasPointerCapture(held.pointer)) element.releasePointerCapture(held.pointer)
+    drag.current = null
+    hover.current = NONE
+  }, [editable])
+
+  // As many pixels as the screen has under it, drawn again whenever its size changes. Observing it reports its size at
+  // once, so it's drawn again too whenever what it draws changes
   useEffect(() => {
     const element = canvas.current
     if (!element) return undefined
@@ -129,18 +144,18 @@ export function CropOverlay({ corners }: CropOverlayProps) {
     redraw()
   }
 
-  return (
-    <canvas
-      ref={canvas}
-      className="overlay"
-      onPointerDown={press}
-      onPointerMove={move}
-      onPointerUp={release}
-      onPointerCancel={release}
-      onLostPointerCapture={release}
-      onPointerLeave={leave}
-    />
-  )
+  const handlers = editable
+    ? {
+        onPointerDown: press,
+        onPointerMove: move,
+        onPointerUp: release,
+        onPointerCancel: release,
+        onLostPointerCapture: release,
+        onPointerLeave: leave,
+      }
+    : {}
+
+  return <canvas ref={canvas} className={editable ? 'overlay' : 'overlay outline'} {...handlers} />
 }
 
 // Where the pointer is on the preview, in CSS pixels, and the preview's size
@@ -153,10 +168,10 @@ function reach(event: PointerEvent<HTMLCanvasElement>) {
   return event.pointerType === 'touch' ? REACH_TOUCH : REACH
 }
 
-// The outline, a CSS pixel wide and kept inside the canvas so that it shows all round the picture, and the knobs, kept
-// inside it too. The one held or under the pointer is lit and drawn last, on top; all of them are lit for the whole
-// cutout
-function draw(canvas: HTMLCanvasElement, corners: readonly Point[], active: number) {
+// The outline, a CSS pixel wide and kept inside the canvas so that it shows all round the picture, and while editable,
+// the knobs, kept inside it too. The one held or under the pointer is lit and drawn last, on top; all of them are lit
+// for the whole cutout
+function draw(canvas: HTMLCanvasElement, corners: readonly Point[], editable: boolean, active: number) {
   const context = canvas.getContext('2d')
   if (!context) return
   const { width, height } = canvas
@@ -175,6 +190,11 @@ function draw(canvas: HTMLCanvasElement, corners: readonly Point[], active: numb
   }
   context.closePath()
   context.stroke()
+
+  if (!editable) {
+    canvas.style.cursor = ''
+    return
+  }
 
   const size = KNOB * ratio
   const order = [0, 1, 2, 3].filter((i) => i !== active)
