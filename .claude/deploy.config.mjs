@@ -4,5 +4,5 @@
 //
 // The build uses relative asset paths, so it runs from any folder, and this is the only place that names it.
 export default {
-  liveName: 'greenscreen',
+  liveName: 'conductor',
 }
