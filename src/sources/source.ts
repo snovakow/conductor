@@ -1,6 +1,8 @@
+import { Greenscreen } from '@snovakow/greenscreen'
+import type { Point } from '@snovakow/greenscreen'
 import { Changes } from '../changes.ts'
-import { applySettings, createUniforms, DEFAULT_SETTINGS } from '../greenscreen/chromaKey.ts'
-import type { ChromaKeyUniforms, Settings } from '../greenscreen/chromaKey.ts'
+import { DEFAULT_SETTINGS, keyerSettings } from '../greenscreen/settings.ts'
+import type { Settings } from '../greenscreen/settings.ts'
 import type { Stream } from '../stream.ts'
 
 // Where a source's picture comes from. Cameras and screens are live streams; videos and images are files
@@ -10,40 +12,37 @@ export type SourceElement = HTMLVideoElement | HTMLImageElement
 
 let count = 0
 
-// The cutout's corners at first: the picture's own, clockwise from the top left
-const WHOLE = [
-  [0, 0],
-  [1, 0],
-  [1, 1],
-  [0, 1],
-] as const
+// The cut's corners at first: the picture's own, clockwise from the top left
+const WHOLE: readonly Readonly<Point>[] = [
+  { x: 0, y: 0 },
+  { x: 1, y: 0 },
+  { x: 1, y: 1 },
+  { x: 0, y: 1 },
+]
 
 // One picture in the library, and how it's prepared before it's used: keyed, mirrored, cut, its colour changed. It
 // plays in an element of its own that's never put on the page, so it plays on whatever shows it, and everything on
-// screen is a copy of it. Untouched, it's the picture as it comes. Once its settings are changed, it's prepared, and
-// its surface is the prepared picture, which the Greenscreen component draws into processed. It stays prepared until
-// it's reset, so a setting moved back to where it started doesn't take the picture away to start again
+// screen is a copy of it. Untouched, it's the picture as it comes. Once its settings are changed, it's prepared: it has
+// a greenscreen of its own, a keyer that draws the prepared picture into its canvas on the ticker, and its surface is
+// that canvas once there's a picture in it. It stays prepared until it's reset, so a setting moved back to where it
+// started doesn't take the picture away to start again
 export class Source extends Changes implements Stream {
   readonly id: string
   readonly kind: SourceKind
   readonly element: SourceElement
   // The camera's id, so a camera that's open isn't opened again
   readonly deviceId: string | null
+  // What the panel edits, kept here, so a source opened again is as it was left
   readonly settings: Settings = { ...DEFAULT_SETTINGS }
-  readonly uniforms: ChromaKeyUniforms = createUniforms()
-  // The prepared picture, as Greenscreen last drew it, and whether it's there to show: false until Greenscreen has
-  // drawn a frame, and again once it's gone
-  readonly processed: HTMLCanvasElement = document.createElement('canvas')
-  live = false
-  // Counts the changes to the settings, so Greenscreen can tell when to draw a picture that hasn't changed again
-  revision = 0
+  // The cut's corners, in the picture's coordinates with y down, which the preview's handles move in place. The keyer
+  // keeps a copy of its own, which moveCorners brings up to date
+  readonly corners: Point[] = WHOLE.map((corner) => ({ ...corner }))
 
   // What raw shows: the picture as it comes, for the tools that work on it to read and draw over
   readonly raw: Stream
 
   #name: string
-  #prepared = false
-  #flip = false
+  #keyer: Greenscreen | null = null
   #stream: MediaStream | null
   #url: string | null
   #ended: (() => void) | null = null
@@ -84,40 +83,55 @@ export class Source extends Changes implements Stream {
     return element.complete && element.naturalWidth ? element : null
   }
 
+  // The prepared picture once the keyer has drawn one, and until then, while its context is lost, or while it can't key
+  // the picture, the picture as it comes
   get surface(): CanvasImageSource | null {
-    return this.#prepared && this.live ? this.processed : this.frame
+    const keyer = this.#keyer
+    return keyer?.ready ? keyer.canvas : this.frame
   }
 
   get prepared() {
-    return this.#prepared
+    return this.#keyer !== null
   }
 
   get stream() {
     return this.#stream
   }
 
-  // The settings into the shader, after something has changed them. The first change prepares the source, and Flip
-  // tells whatever shows the plane, as it isn't a uniform
+  // The settings to the keyer, after something has changed them. The first change prepares the source, with a keyer
+  // made for it from the settings and the corners as they are. A picture it can't key, such as one larger than the
+  // GPU's textures, is an error, as the app's others are
   update() {
-    applySettings(this.uniforms, this.settings)
-    this.revision += 1
-    const flip = this.settings.flip
-    if (!this.#prepared || flip !== this.#flip) {
-      this.#prepared = true
-      this.#flip = flip
-      this.changed()
+    const settings = keyerSettings(this.settings)
+    if (this.#keyer) {
+      this.#keyer.set(settings)
+      return
     }
+    this.#keyer = new Greenscreen(this.element, {
+      settings: { ...settings, corners: this.corners },
+      onError: (error) => console.error(error),
+    })
+    this.changed()
   }
 
-  // Back to the picture as it comes, with the cutout's corners back on its own
+  // The corners to the keyer, after the handles have moved them. It copies them, so a move it hasn't been told of
+  // changes nothing
+  moveCorners() {
+    this.#keyer?.set({ corners: this.corners })
+  }
+
+  // Draws the prepared picture, when there's something new to draw: a frame, a setting, a corner. It's called first in
+  // every tick, so whatever draws from the source that tick draws its newest picture
+  render() {
+    this.#keyer?.render()
+  }
+
+  // Back to the picture as it comes, with the cut's corners back on its own, and the keyer gone
   reset() {
     Object.assign(this.settings, DEFAULT_SETTINGS)
-    this.uniforms.crop.value.forEach((corner, i) => corner.set(WHOLE[i][0], WHOLE[i][1]))
-    applySettings(this.uniforms, this.settings)
-    this.revision += 1
-    this.#flip = false
-    this.#prepared = false
-    this.live = false
+    this.corners.forEach((corner, i) => Object.assign(corner, WHOLE[i]))
+    this.#keyer?.dispose()
+    this.#keyer = null
     this.changed()
   }
 
@@ -146,9 +160,12 @@ export class Source extends Changes implements Stream {
     await element.play()
   }
 
-  // Stops it for good: a stream's tracks stop, freeing the camera, and a file's object URL goes
+  // Stops it for good: its keyer frees what it holds on the GPU, a stream's tracks stop, freeing the camera, and a
+  // file's object URL goes
   dispose() {
     this.#ended = null
+    this.#keyer?.dispose()
+    this.#keyer = null
     for (const track of this.#stream?.getTracks() ?? []) track.stop()
     const element = this.element
     if (element instanceof HTMLVideoElement) {
@@ -159,7 +176,6 @@ export class Source extends Changes implements Stream {
     }
     if (this.#url) URL.revokeObjectURL(this.#url)
     this.#url = null
-    this.live = false
   }
 }
 

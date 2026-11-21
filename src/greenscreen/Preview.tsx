@@ -47,7 +47,7 @@ export function Preview({ source, mode, crop, onPick, onDone }: PreviewProps) {
     <div className={className} style={style}>
       <StreamView stream={source.raw} shaped onClick={tool === 'pick' ? pick : undefined} />
       {sized && (crop || tool === 'crop') && (
-        <CropOverlay corners={source.uniforms.crop.value} editable={tool === 'crop'} />
+        <CropOverlay corners={source.corners} editable={tool === 'crop'} onChange={() => source.moveCorners()} />
       )}
       {tool !== 'raw' && (
         <button type="button" className="done" onClick={onDone}>

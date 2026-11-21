@@ -1,5 +1,5 @@
-import { MathUtils } from 'three'
 import type { Stream } from '../stream.ts'
+import { clamp } from './crop.ts'
 
 // The patch of the frame a pick averages, in pixels each way
 const PATCH = 5
@@ -9,7 +9,7 @@ let context: CanvasRenderingContext2D | null = null
 // The colour of the picture at u, v in its frame, 0 to 1 across and down it, as 0xrrggbb: the average of the 5×5 pixels
 // around the spot, which smooths out a camera's noise, moved in to stay inside the frame at its edges. It's given the
 // source's raw picture, not the keyed one, so a spot the key has already taken out can still be picked. The pixels are
-// averaged in their sRGB values, from which the shader measures chroma, and linearly, so the average has the patch's
+// averaged in their sRGB values, from which the keyer measures chroma, and linearly, so the average has the patch's
 // average chroma. Null while there's no frame to read
 export function sampleKey(picture: Stream, u: number, v: number): number | null {
   const { surface, width, height } = picture
@@ -17,8 +17,8 @@ export function sampleKey(picture: Stream, u: number, v: number): number | null 
 
   const w = Math.min(PATCH, width)
   const h = Math.min(PATCH, height)
-  const x = MathUtils.clamp(Math.floor(u * width) - Math.floor(w / 2), 0, width - w)
-  const y = MathUtils.clamp(Math.floor(v * height) - Math.floor(h / 2), 0, height - h)
+  const x = clamp(Math.floor(u * width) - Math.floor(w / 2), 0, width - w)
+  const y = clamp(Math.floor(v * height) - Math.floor(h / 2), 0, height - h)
 
   if (!context) {
     const canvas = document.createElement('canvas')

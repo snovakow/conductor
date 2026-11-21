@@ -1,11 +1,12 @@
-import { MathUtils } from 'three'
+import type { Point } from '@snovakow/greenscreen'
 
-// The cutout's corners: four points in the picture's coordinates, 0 to 1 across and down it, clockwise from the
+// The cutout's corners are four points in the picture's coordinates, 0 to 1 across and down it, clockwise from the
 // top left. The preview's handles move them with these, which keep them inside the picture and keep the shape they make
-// convex, as the shader's test for what is inside it needs
-export interface Point {
-  x: number
-  y: number
+// convex, as the keyer's test for what is inside it needs
+
+// x, kept between low and high
+export function clamp(x: number, low: number, high: number) {
+  return Math.min(Math.max(x, low), high)
 }
 
 // What a press on the preview takes hold of: a corner, by its index, the whole cutout, or nothing
@@ -17,7 +18,7 @@ const TOLERANCE = 1e-9
 // The least of the picture the cutout can be cut down to, so its corners never all meet. A pixel of a 1280×720 picture
 // is about a millionth of it
 const SMALLEST = 1e-6
-// How near another corner a corner goes onto it, about a pixel. The shader takes each side's line as an edge of the
+// How near another corner a corner goes onto it, about a pixel. The keyer takes each side's line as an edge of the
 // cutout, and the direction of a side between two corners a hair apart is lost in its 32-bit floats, so corners are
 // either together, when it has no side to take, or this far apart
 const GAP = 1e-3
@@ -44,8 +45,8 @@ export function together(points: readonly Point[], i: number) {
 // its middle, the whole cutout, unless it spans the picture and has nowhere to go. Otherwise the nearest corner within
 // radius, or the first of corners dragged together
 export function hitTest(points: readonly Point[], x: number, y: number, width: number, height: number, radius: number) {
-  x = MathUtils.clamp(x, 0, width)
-  y = MathUtils.clamp(y, 0, height)
+  x = clamp(x, 0, width)
+  y = clamp(y, 0, height)
 
   const xs = points.map((point) => point.x)
   const ys = points.map((point) => point.y)
@@ -80,11 +81,11 @@ export function hitTest(points: readonly Point[], x: number, y: number, width: n
 export function moveQuad(points: Point[], start: readonly Point[], dx: number, dy: number) {
   const xs = start.map((point) => point.x)
   const ys = start.map((point) => point.y)
-  dx = MathUtils.clamp(dx, -Math.min(...xs), 1 - Math.max(...xs))
-  dy = MathUtils.clamp(dy, -Math.min(...ys), 1 - Math.max(...ys))
+  dx = clamp(dx, -Math.min(...xs), 1 - Math.max(...xs))
+  dy = clamp(dy, -Math.min(...ys), 1 - Math.max(...ys))
   points.forEach((point, i) => {
-    point.x = MathUtils.clamp(start[i].x + dx, 0, 1)
-    point.y = MathUtils.clamp(start[i].y + dy, 0, 1)
+    point.x = clamp(start[i].x + dx, 0, 1)
+    point.y = clamp(start[i].y + dy, 0, 1)
   })
 }
 
@@ -93,7 +94,7 @@ export function moveQuad(points: Point[], start: readonly Point[], dx: number, d
 // can it cross the line of the side beyond either neighbour, where the cutout would bend in at that neighbour, so it
 // comes back along the line from the other neighbour until it is on that line. Coming back that way, it stays on the
 // side of every line it was already kept to. It goes onto any corner it comes within GAP of. If rounding still leaves a
-// shape the shader can't draw, or one too small to see, the corner stays where it was
+// shape the keyer can't draw, or one too small to see, the corner stays where it was
 export function moveCorner(points: Point[], i: number, x: number, y: number) {
   const corner = points[i]
   const next = points[(i + 1) % 4]
@@ -101,7 +102,7 @@ export function moveCorner(points: Point[], i: number, x: number, y: number) {
   const previous = points[(i + 3) % 4]
   const was = { x: corner.x, y: corner.y }
 
-  let point = { x: MathUtils.clamp(x, 0, 1), y: MathUtils.clamp(y, 0, 1) }
+  let point = { x: clamp(x, 0, 1), y: clamp(y, 0, 1) }
 
   if (side(point.x, point.y, previous, next) < 0) {
     const dx = next.x - previous.x
@@ -125,8 +126,8 @@ export function moveCorner(points: Point[], i: number, x: number, y: number) {
     }
   }
 
-  corner.x = MathUtils.clamp(point.x, 0, 1)
-  corner.y = MathUtils.clamp(point.y, 0, 1)
+  corner.x = clamp(point.x, 0, 1)
+  corner.y = clamp(point.y, 0, 1)
   if (!drawable(points)) {
     corner.x = was.x
     corner.y = was.y
@@ -163,7 +164,7 @@ function stopAt(point: Point, from: Point, a: Point, b: Point): Point {
   return { x: from.x + (point.x - from.x) * t, y: from.y + (point.y - from.y) * t }
 }
 
-// A shape the shader can draw: every corner inside the line of every side, or on it, so that what is inside all of the
+// A shape the keyer can draw: every corner inside the line of every side, or on it, so that what is inside all of the
 // sides is the shape itself, with some of the picture inside it
 function drawable(points: readonly Point[]) {
   let area = 0

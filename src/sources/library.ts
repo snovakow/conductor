@@ -1,4 +1,5 @@
 import { Changes } from '../changes.ts'
+import { onTick } from '../ticker.ts'
 import { createVideo, Source } from './source.ts'
 import type { SourceKind } from './source.ts'
 
@@ -18,12 +19,14 @@ export function categoryOf(kind: SourceKind): Category {
 }
 
 // Every source there is to use: each camera, opened at the start so its row plays live, the files loaded, and the
-// screens shared. A source stays until it's removed, or its stream ends, which takes it off everything using it
+// screens shared. A source stays until it's removed, or its stream ends, which takes it off everything using it. While
+// it's started, the prepared sources are keyed on the ticker
 export class Library extends Changes {
   #sources: Source[] = []
   #removed = new Set<(source: Source) => void>()
   // Bumped by stop, so cameras still opening when the library stops are stopped as they arrive
   #generation = 0
+  #stopKeying: (() => void) | null = null
 
   get sources(): readonly Source[] {
     return this.#sources
@@ -41,11 +44,18 @@ export class Library extends Changes {
     }
   }
 
+  // Each prepared source keyed in the tick's first phase, so the whiteboard, the output and the views all draw the
+  // picture keyed in the same tick, whichever clock is driving it
   start() {
+    this.#stopKeying ??= onTick('process', () => {
+      for (const source of this.#sources) source.render()
+    })
     void this.openCameras()
   }
 
   stop() {
+    this.#stopKeying?.()
+    this.#stopKeying = null
     this.#generation += 1
     const sources = this.#sources
     this.#sources = []

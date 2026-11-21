@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
 import { useChanges } from './changes.ts'
-import { Greenscreen } from './greenscreen/Greenscreen.tsx'
 import { Inspector } from './inspector/Inspector.tsx'
 import { Output } from './output/output.ts'
 import { OutputSwitch } from './output/OutputSwitch.tsx'
@@ -20,9 +19,9 @@ const TABS: { tab: Tab; label: string }[] = [
 ]
 
 // The library of sources down the left, shared by the two tabs: the inspector, where a source clicked is opened to be
-// prepared, and the whiteboard, where a source clicked is placed. Every prepared source is keyed out of sight, so it's
-// ready wherever it's used. The output, chosen at the top right, is the whiteboard or any one source, and the pop-out
-// shows and records it
+// prepared, and the whiteboard, where a source clicked is placed. Every prepared source is keyed on the ticker, shown
+// or not, so it's ready wherever it's used. The output, chosen at the top right, is the whiteboard or any one source,
+// and the pop-out shows and records it
 export default function App() {
   const [library] = useState(() => new Library())
   const [whiteboard] = useState(() => new Whiteboard())
@@ -110,13 +109,6 @@ export default function App() {
       <main className="tab">
         {tab === 'inspector' ? <Inspector source={selected} /> : <WhiteboardTab whiteboard={whiteboard} />}
       </main>
-      <div className="processors" aria-hidden="true">
-        {library.sources
-          .filter((source) => source.prepared)
-          .map((source) => (
-            <Greenscreen key={source.id} source={source} />
-          ))}
-      </div>
     </div>
   )
 }

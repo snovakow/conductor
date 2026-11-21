@@ -1,8 +1,7 @@
+import type { Point } from '@snovakow/greenscreen'
 import { useCallback, useEffect, useRef } from 'react'
 import type { PointerEvent } from 'react'
-import { MathUtils } from 'three'
-import { ALL, copy, hitTest, moveCorner, moveQuad, NONE, pickCorner, together } from './crop.ts'
-import type { Point } from './crop.ts'
+import { ALL, clamp, copy, hitTest, moveCorner, moveQuad, NONE, pickCorner, together } from './crop.ts'
 
 // The handles' colours, and their sizes in CSS pixels
 const LINE = '#de3b1d'
@@ -16,11 +15,13 @@ const REACH_TOUCH = 24
 const SLOP = 4
 
 interface CropOverlayProps {
-  // The shader's own corners, which a drag moves in place
+  // The source's corners, which a drag moves in place
   corners: Point[]
   // Whether the handles are up to drag. Without them it's just the outline, which the pointer goes through to the
   // picture under it
   editable: boolean
+  // A drag has moved the corners
+  onChange: () => void
 }
 
 // A drag: the pointer making it, what it holds, where it began, and how far the corner it holds was from the pointer,
@@ -38,9 +39,9 @@ interface Drag {
 }
 
 // The cutout's outline over the source's own picture, and while editable, its handles: a knob at each corner to drag.
-// Once the cutout is smaller than the picture, it drags whole from inside. A drag moves the shader's corners in place,
-// so the picture follows on its next frame
-export function CropOverlay({ corners, editable }: CropOverlayProps) {
+// Once the cutout is smaller than the picture, it drags whole from inside. A drag moves the corners in place and says
+// so with each move, for the keyer to take them, so the picture follows on the next tick
+export function CropOverlay({ corners, editable, onChange }: CropOverlayProps) {
   const canvas = useRef<HTMLCanvasElement>(null)
   const hover = useRef(NONE)
   const drag = useRef<Drag | null>(null)
@@ -122,6 +123,7 @@ export function CropOverlay({ corners, editable }: CropOverlayProps) {
       }
       moveCorner(corners, held.target, u, v)
     }
+    onChange()
     redraw()
   }
 
@@ -183,10 +185,7 @@ function draw(canvas: HTMLCanvasElement, corners: readonly Point[], editable: bo
   context.strokeStyle = LINE
   context.beginPath()
   for (const corner of corners) {
-    context.lineTo(
-      MathUtils.clamp(corner.x * width, half, width - half),
-      MathUtils.clamp(corner.y * height, half, height - half),
-    )
+    context.lineTo(clamp(corner.x * width, half, width - half), clamp(corner.y * height, half, height - half))
   }
   context.closePath()
   context.stroke()
@@ -200,8 +199,8 @@ function draw(canvas: HTMLCanvasElement, corners: readonly Point[], editable: bo
   const order = [0, 1, 2, 3].filter((i) => i !== active)
   if (active !== NONE && active !== ALL) order.push(active)
   for (const i of order) {
-    const x = MathUtils.clamp(corners[i].x * width - size / 2, 0, width - size)
-    const y = MathUtils.clamp(corners[i].y * height - size / 2, 0, height - size)
+    const x = clamp(corners[i].x * width - size / 2, 0, width - size)
+    const y = clamp(corners[i].y * height - size / 2, 0, height - size)
     context.fillStyle = LINE
     context.fillRect(x, y, size, size)
     context.fillStyle = active === ALL || active === i ? LIT : FACE

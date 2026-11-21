@@ -167,7 +167,7 @@ body {
 }
 
 /* The panel's title is the source's name, on one line however long */
-.controls .lil-gui .title {
+.controls .lil-gui .lil-title {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -249,15 +249,4 @@ body {
 
 .layers .row {
   height: 64px;
-}
-
-/* Where the sources are keyed, out of sight: each canvas keeps its own size, and is only ever copied */
-.processors {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 0;
-  height: 0;
-  overflow: hidden;
-  pointer-events: none;
 }
