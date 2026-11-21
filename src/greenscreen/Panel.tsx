@@ -14,6 +14,11 @@ const EDITING = 'Drag the corners…'
 const PICK_KEY = 'Pick key'
 const PICKING = 'Click the preview…'
 
+// The decimal places in a number setting's step, which the panel keeps the number on: 0 for a step of 1, 2 for 0.01 and
+// 4 for 0.0001
+const placesIn = (name: NumericSetting) => (String(RANGES[name].step).split('.')[1] ?? '').length
+const isNumber = (property: string): property is NumericSetting => Object.hasOwn(RANGES, property)
+
 // The controls the panel changes from outside it
 interface PanelControls {
   key: Controller
@@ -105,9 +110,14 @@ export function Panel({ ref, source, onCrop, mode, onEditCrop, onPickKey, onBott
     }
     gui.add({ reset }, 'reset').name('Reset')
 
-    // A button's press comes here too, though it changes no setting
-    gui.onChange(({ object }) => {
-      if (object === settings) source.update()
+    // A button's press comes here too, though it changes no setting. A number is put back on its step first: lil-gui
+    // counts steps from the slider's min, which on a range that starts below 0 leaves the value a hair off its step, as
+    // -0.0499999999999999 for -0.05. This runs before the control's own handler, before its field is drawn again and
+    // before the keyer has the settings, and the arrow keys step on from what the field shows
+    gui.onChange(({ object, property }) => {
+      if (object !== settings) return
+      if (isNumber(property)) settings[property] = Number(settings[property].toFixed(placesIn(property)))
+      source.update()
     })
 
     // Where the panel ends, for the stylesheet to keep the grown preview below it
