@@ -173,6 +173,13 @@ body {
   text-overflow: ellipsis;
 }
 
+/* The panel's number fields 48px wide rather than lil-gui's 45px, so every number fits with a mouse, the widest being
+   Brightness's -0.4444. lil-gui puts its stylesheet before this one, and its touch styles are more specific than this
+   selector, so a touch screen still gives the fields lil-gui's 50px */
+.lil-gui {
+  --slider-input-min-width: 48px;
+}
+
 /* The source's own picture, small in the bottom-right corner */
 .preview {
   position: absolute;
